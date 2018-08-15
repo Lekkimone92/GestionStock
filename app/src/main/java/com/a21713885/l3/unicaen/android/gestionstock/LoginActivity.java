@@ -3,6 +3,9 @@ package com.a21713885.l3.unicaen.android.gestionstock;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.annotation.TargetApi;
+import android.app.ProgressDialog;
+import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.support.annotation.NonNull;
 import android.support.design.widget.Snackbar;
@@ -19,6 +22,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.provider.ContactsContract;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.View.OnClickListener;
@@ -28,15 +32,30 @@ import android.widget.AutoCompleteTextView;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
+import android.widget.Toast;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.FormBody;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 
 import static android.Manifest.permission.READ_CONTACTS;
 
 /**
  * A login screen that offers login via email/password.
  */
-public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<Cursor> {
+public class LoginActivity extends AppCompatActivity {
 
     /**
      * Id to identity READ_CONTACTS permission request.
@@ -53,11 +72,14 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
     /**
      * Keep track of the login task to ensure we can cancel it if requested.
      */
-    private UserLoginTask mAuthTask = null;
+    //private UserLoginTask mAuthTask = null;
 
     // UI references.
-    private AutoCompleteTextView mEmailView;
+    private EditText mUsername;
     private EditText mPasswordView;
+    private TextView errorView;
+    public static  final String MY_PREF_NAME = "preferences";
+    private Boolean erreur = false;
     private View mProgressView;
     private View mLoginFormView;
 
@@ -66,9 +88,10 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_login);
         // Set up the login form.
-        mEmailView = (AutoCompleteTextView) findViewById(R.id.email);
-        populateAutoComplete();
-
+        mUsername = (EditText) findViewById(R.id.username);
+        //populateAutoComplete();
+        errorView = (TextView)findViewById(R.id.error_text);
+        errorView.setEnabled(false);
         mPasswordView = (EditText) findViewById(R.id.password);
         mPasswordView.setOnEditorActionListener(new TextView.OnEditorActionListener() {
             @Override
@@ -85,7 +108,27 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
         mEmailSignInButton.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View view) {
+                String username = mUsername.getText().toString();
+                String password = mPasswordView.getText().toString();
+                Log.d("------USERNAME--------", username);
+                Log.d("------PASSWORD--------", password);
                 attemptLogin();
+                try{
+                    Toast.makeText(LoginActivity.this,"Dans le try avant loginService",Toast.LENGTH_SHORT).show();
+                   /* if (compareUserInfo(username, password)){
+                        Intent intent = new Intent(LoginActivity.this,MainActivity.class);
+                        startActivity(intent);
+                    } else {
+                        loginService(username, password);
+                    }*/
+                    loginService(username, password);
+                    if (erreur){
+                        printError();
+                    }
+                }catch (IOException e){
+                    Toast.makeText(LoginActivity.this,"Erreur du service de connexion",Toast.LENGTH_SHORT).show();
+                }
+
             }
         });
 
@@ -93,15 +136,15 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
         mProgressView = findViewById(R.id.login_progress);
     }
 
-    private void populateAutoComplete() {
+    /*private void populateAutoComplete() {
         if (!mayRequestContacts()) {
             return;
         }
 
         getLoaderManager().initLoader(0, null, this);
     }
-
-    private boolean mayRequestContacts() {
+*/
+    /*private boolean mayRequestContacts() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
             return true;
         }
@@ -121,12 +164,12 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
             requestPermissions(new String[]{READ_CONTACTS}, REQUEST_READ_CONTACTS);
         }
         return false;
-    }
+    }*/
 
     /**
      * Callback received when a permissions request has been completed.
      */
-    @Override
+   /* @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
                                            @NonNull int[] grantResults) {
         if (requestCode == REQUEST_READ_CONTACTS) {
@@ -134,7 +177,7 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
                 populateAutoComplete();
             }
         }
-    }
+    }*/
 
 
     /**
@@ -142,17 +185,93 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
      * If there are form errors (invalid email, missing fields, etc.), the
      * errors are presented and no actual login attempt is made.
      */
+
+    /**
+     * Utilisation de okHttp pour les l'envoie des données de connexion
+     */
+
+    public void loginService(String username, String password) throws IOException {
+        // Instanciation de l'objet OkHttp pour l'envoie
+        OkHttpClient client = new OkHttpClient();
+
+        //construction du corps de la requete à partir de l'objet RequestBody
+        RequestBody requestBody = new FormBody.Builder()
+                .add("username",username)
+                .add("password",password)
+                .build();
+        Log.d("------OKHTTP3--------", "REQUEST BODY CREATED");
+        Toast.makeText(LoginActivity.this,"genertion de Okhttp",Toast.LENGTH_SHORT).show();
+        //construction de la requete à partir de l'objet Request
+        Request request = new Request.Builder()
+                .url("http://stock.boxappli.com/index.php/webServices/login")
+                .post(requestBody)
+                .build();
+        Log.d("------OKHTTP3--------", "REQUEST SEND");
+        final ProgressDialog progressDialog = new ProgressDialog(this);
+        progressDialog.setMessage("connexion en cours...");
+        //Afficher le loader
+        progressDialog.show();
+        // callback de la requete
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                System.out.println( "Erreur de recuperation du user"+e.getMessage());
+                Log.d("------OKHTTP3--------", "Erreur de recuperation du user");
+                e.printStackTrace();
+                progressDialog.dismiss();
+            }
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                progressDialog.dismiss();
+                if (response.isSuccessful()) {
+                    /*String MyResult = response.body().string();
+                    System.out.println("Affichage du reultat");
+                    System.out.println(MyResult);*/
+                    //Log.d("------OKHTTP3--------", "------Reponse----- "+ MyResult);
+                    //System.out.println( "valeur de response " + response.body().string());
+                    JSONObject jsonObject = null;
+                    Intent intent = new Intent(LoginActivity.this,MainActivity.class);
+                    try {
+                        System.out.println( "-----dans le try-------");
+                        jsonObject = new JSONObject(response.body().string());
+                        System.out.println( "-----Reponse----- " + jsonObject.toString());
+                        if(jsonObject.get("status").toString().equals("OK") ){
+                            System.out.println( "-----Statut OK-------");
+                            JSONArray remoteUserArray = (JSONArray)jsonObject.get("content");
+                            JSONObject remoteUser = (JSONObject)remoteUserArray.get(0);
+                            System.out.println(remoteUser.toString());
+
+                            User user = new User(Integer.parseInt(remoteUser.get("userID").toString()), remoteUser.get("username").toString(), remoteUser.get("password").toString(),
+                                    remoteUser.get("role").toString());
+                            usernameInfo(user);
+                            //intent.putExtra("User",user);
+                            startActivity(intent);
+                        }else {
+                            System.out.println( "-----dans le else-------");
+                            erreur = true;
+                        }
+
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    }
+                }
+
+            }
+        });
+
+    }
+
     private void attemptLogin() {
-        if (mAuthTask != null) {
+        /*if (mAuthTask != null) {
             return;
-        }
+        }*/
 
         // Reset errors.
-        mEmailView.setError(null);
+        mUsername.setError(null);
         mPasswordView.setError(null);
 
         // Store values at the time of the login attempt.
-        String email = mEmailView.getText().toString();
+        String username = mUsername.getText().toString();
         String password = mPasswordView.getText().toString();
 
         boolean cancel = false;
@@ -166,13 +285,13 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
         }
 
         // Check for a valid email address.
-        if (TextUtils.isEmpty(email)) {
-            mEmailView.setError(getString(R.string.error_field_required));
-            focusView = mEmailView;
+        if (TextUtils.isEmpty(username)) {
+            mUsername.setError(getString(R.string.error_field_required));
+            focusView = mUsername;
             cancel = true;
-        } else if (!isEmailValid(email)) {
-            mEmailView.setError(getString(R.string.error_invalid_email));
-            focusView = mEmailView;
+        } else if (!isUSernameValid(username)) {
+            mUsername.setError(getString(R.string.error_invalid_username));
+            focusView = mUsername;
             cancel = true;
         }
 
@@ -183,14 +302,15 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
         } else {
             // Show a progress spinner, and kick off a background task to
             // perform the user login attempt.
-            showProgress(true);
-            mAuthTask = new UserLoginTask(email, password);
-            mAuthTask.execute((Void) null);
+            /*showProgress(true);
+            mAuthTask = new UserLoginTask(username, password);
+            mAuthTask.execute((Void) null);*/
+            Toast.makeText(LoginActivity.this,"Dans le else de attempt login",Toast.LENGTH_SHORT).show();
         }
     }
-    private boolean isEmailValid(String email) {
+    private boolean isUSernameValid(String username) {
         //TODO: Replace this with your own logic
-        return email.contains("@");
+        return username.length() > 3;
     }
 
     private boolean isPasswordValid(String password) {
@@ -198,10 +318,37 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
         return password.length() > 4;
     }
 
+    //stocker les informations de l'utilisateur dans les preferences pour les reutiliser après
+    protected  void usernameInfo(User user){
+        SharedPreferences.Editor editor = getSharedPreferences(MY_PREF_NAME,MODE_PRIVATE).edit();
+        editor.putString("username",user.getUsername());
+        editor.putString("password",user.getPassword());
+        editor.apply();
+        System.out.println(editor.toString());
+    }
+
+    protected  void printError(){
+        errorView.setText(getString(R.string.error_failed_connexion));
+        errorView.setEnabled(true);
+    }
+   /* protected Boolean compareUserInfo(String username, String password){
+        SharedPreferences userInfo  = getSharedPreferences(MY_PREF_NAME,MODE_PRIVATE);
+        Boolean reponse = false;
+        System.out.println("----preferences------");
+        System.out.println("----preferences------ " + userInfo.getString("username", "test").toString() + " ------- "+ userInfo.getString("password", "pwd").toString());
+        System.out.println("----preferences------ " + username + " ------- "+ password);
+        if(userInfo.getString("username", "test").toString().equals(username) && userInfo.getString("password", "pwd").toString().equals(password)){
+            System.out.println("----preferences test OK------");
+            reponse = true;
+            System.out.println("----true------");
+        }
+        return reponse;
+    }*/
+
     /**
      * Shows the progress UI and hides the login form.
      */
-    @TargetApi(Build.VERSION_CODES.HONEYCOMB_MR2)
+    /*@TargetApi(Build.VERSION_CODES.HONEYCOMB_MR2)
     private void showProgress(final boolean show) {
         // On Honeycomb MR2 we have the ViewPropertyAnimator APIs, which allow
         // for very easy animations. If available, use these APIs to fade-in
@@ -232,9 +379,9 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
             mProgressView.setVisibility(show ? View.VISIBLE : View.GONE);
             mLoginFormView.setVisibility(show ? View.GONE : View.VISIBLE);
         }
-    }
+    }*/
 
-    @Override
+   /* @Override
     public Loader<Cursor> onCreateLoader(int i, Bundle bundle) {
         return new CursorLoader(this,
                 // Retrieve data rows for the device user's 'profile' contact.
@@ -276,29 +423,29 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
 
         int ADDRESS = 0;
         int IS_PRIMARY = 1;
-    }
+    }*/
 
 
-    private void addEmailsToAutoComplete(List<String> emailAddressCollection) {
+   /* private void addEmailsToAutoComplete(List<String> emailAddressCollection) {
         //Create adapter to tell the AutoCompleteTextView what to show in its dropdown list.
         ArrayAdapter<String> adapter =
                 new ArrayAdapter<>(LoginActivity.this,
                         android.R.layout.simple_dropdown_item_1line, emailAddressCollection);
 
         mEmailView.setAdapter(adapter);
-    }
+    }*/
 
     /**
      * Represents an asynchronous login/registration task used to authenticate
      * the user.
      */
-    public class UserLoginTask extends AsyncTask<Void, Void, Boolean> {
+    /*public class UserLoginTask extends AsyncTask<Void, Void, Boolean> {
 
-        private final String mEmail;
+        private final String mUsername;
         private final String mPassword;
 
-        UserLoginTask(String email, String password) {
-            mEmail = email;
+        UserLoginTask(String username, String password) {
+            mUsername = username;
             mPassword = password;
         }
 
@@ -315,7 +462,7 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
 
             for (String credential : DUMMY_CREDENTIALS) {
                 String[] pieces = credential.split(":");
-                if (pieces[0].equals(mEmail)) {
+                if (pieces[0].equals(mUsername)) {
                     // Account exists, return true if the password matches.
                     return pieces[1].equals(mPassword);
                 }
@@ -343,6 +490,6 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
             mAuthTask = null;
             showProgress(false);
         }
-    }
+    }*/
 }
 
